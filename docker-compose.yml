@@ -1,0 +1,45 @@
+# Production-ish compose file.
+#
+#   docker compose up -d --build
+#
+# The bot auto-restarts on crash (restart: unless-stopped) and Docker uses the
+# built-in HEALTHCHECK to detect a hung process and restart it.
+services:
+  bot:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-compose}
+    image: exchange-api-update-bot:latest
+    container_name: exchange-api-update-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      STATE_PATH: /data/state.json
+      HEALTH_ADDR: ":8080"
+    volumes:
+      # Persist the "already sent" set across restarts/redeploys.
+      - bot_state:/data
+    healthcheck:
+      test: ["CMD", "/bot", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    # Restart if the healthcheck marks it unhealthy (needs Docker's autoheal or
+    # an orchestrator; restart:unless-stopped already covers process crashes).
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # Resource guardrails so a runaway loop can't eat the host.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  bot_state:
