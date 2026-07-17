@@ -117,6 +117,31 @@ func TestGeneralFallback(t *testing.T) {
 	}
 }
 
+func TestCategoryDerivation(t *testing.T) {
+	cat := func(title string) model.Category {
+		a := model.Announcement{Title: title}
+		r := Classify(a)
+		a.Markets = r.Markets
+		a.MatchedRules = r.MatchedRules
+		return a.Category()
+	}
+	cases := []struct {
+		title string
+		want  model.Category
+	}{
+		{"Deprecation of Spot Trading API Endpoints", model.CatAPI},
+		{"Binance Will Delist XYZ on 2026-08-01", model.CatDelisting},
+		{"Trading Competition: Win a Share of the Prize Pool", model.CatPromo},
+		{"Binance Will List NewCoin (NEW)", model.CatListing},
+		{"Scheduled System Maintenance Notice", model.CatMaintenance},
+	}
+	for _, tc := range cases {
+		if got := cat(tc.title); got != tc.want {
+			t.Errorf("Category(%q) = %q, want %q", tc.title, got, tc.want)
+		}
+	}
+}
+
 func containsMarket(list []model.MarketType, m model.MarketType) bool {
 	for _, x := range list {
 		if x == m {

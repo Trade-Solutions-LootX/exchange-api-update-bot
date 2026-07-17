@@ -168,15 +168,23 @@ Once running (non-dry-run), message the bot from the configured chat:
 
 | Command | Does |
 |---|---|
-| `/status` | feed health, down feeds, muted list, current threshold |
+| `/subscribe` | pick which topics to receive via inline ✅/❌ toggle buttons |
+| `/balance` | live balances: DigitalOcean + Vultr (Render lists services) |
+| `/servers` | live CPU/RAM/disk of your servers via their `/v1/system/metrics` |
+| `/status` | feed health, down feeds, subscriptions, muted list, threshold |
 | `/check <exchange> [api]` | fetch the latest items for an exchange right now |
 | `/mute <slug> [dur]` | silence a source (e.g. `/mute bybit 12h`; no dur = forever) |
 | `/unmute <slug>` · `/muted` | re-enable / list mutes |
 | `/min low\|medium\|high\|critical\|reset` | change the delivery threshold live |
 | `/sources` · `/help` | list feeds / usage |
 
-Every alert also carries inline **🔕 Mute** and **✅ OK** buttons. Mute/threshold
-changes are in-memory (reset on restart). The bot only obeys the configured chat.
+**Topics** (subscribe-able): `api`, `listing`, `delisting`, `maintenance`, `infra`,
+`billing`, `promo`, `other`. **Delistings and promos are OFF by default** (the noise
+you don't want); toggle any of them anytime via `/subscribe`.
+
+Every alert also carries inline **🔕 mute** and **✅ ok** buttons. Subscription /
+mute / threshold changes are in-memory (reset on restart). The bot only obeys the
+configured chat. UI is in Russian.
 
 ---
 

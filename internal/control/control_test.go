@@ -37,6 +37,27 @@ func TestMuteExpires(t *testing.T) {
 	}
 }
 
+func TestSubscriptionDefaultsAndToggle(t *testing.T) {
+	c := New(model.ImportanceLow)
+	// Defaults: delistings + promos OFF, everything else ON.
+	if c.IsSubscribed(model.CatDelisting) {
+		t.Error("delistings should be off by default")
+	}
+	if c.IsSubscribed(model.CatPromo) {
+		t.Error("promos should be off by default")
+	}
+	if !c.IsSubscribed(model.CatAPI) || !c.IsSubscribed(model.CatInfra) {
+		t.Error("api/infra should be on by default")
+	}
+	// Toggle delistings on.
+	if on := c.ToggleSubscription(model.CatDelisting); !on {
+		t.Error("toggle should turn delistings on")
+	}
+	if !c.IsSubscribed(model.CatDelisting) {
+		t.Error("delistings should now be on")
+	}
+}
+
 func TestMinImportanceOverride(t *testing.T) {
 	c := New(model.ImportanceLow)
 	if c.MinImportance() != model.ImportanceLow {

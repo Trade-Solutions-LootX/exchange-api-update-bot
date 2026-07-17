@@ -31,6 +31,26 @@ const (
 	MarketBilling MarketType = "billing" // account balance / payments due
 )
 
+// Category is the subscribe-able topic an announcement belongs to. Users pick
+// which categories they want via the Telegram /subscribe menu.
+type Category string
+
+const (
+	CatAPI         Category = "api"         // API updates / changes
+	CatListing     Category = "listing"     // new listings
+	CatDelisting   Category = "delisting"   // delistings / removals
+	CatMaintenance Category = "maintenance" // maintenance, incidents, network upgrades
+	CatInfra       Category = "infra"       // hosting-provider status
+	CatBilling     Category = "billing"     // balance / payments
+	CatPromo       Category = "promo"       // promotions / campaigns (e.g. "World Cup")
+	CatOther       Category = "other"       // everything else
+)
+
+// AllCategories is the ordered set shown in the subscribe menu.
+var AllCategories = []Category{
+	CatAPI, CatListing, CatDelisting, CatMaintenance, CatInfra, CatBilling, CatPromo, CatOther,
+}
+
 // Importance encodes how urgently a human integrator must react. It is
 // ordered: higher values are more urgent.
 type Importance int
@@ -133,6 +153,37 @@ func (a Announcement) hasMarket(want MarketType) bool {
 		}
 	}
 	return false
+}
+
+// Category derives the subscribe-able topic from the item's markets and the
+// classifier's matched rules. Order matters: the most specific/actionable
+// topic wins (billing/infra by market, then API, then the event kind).
+func (a Announcement) Category() Category {
+	if a.hasMarket(MarketBilling) {
+		return CatBilling
+	}
+	if a.hasMarket(MarketInfra) {
+		return CatInfra
+	}
+	if a.hasMarket(MarketAPI) {
+		return CatAPI
+	}
+	rules := strings.Join(a.MatchedRules, ",")
+	switch {
+	case strings.Contains(rules, "api-"), strings.Contains(rules, ":api"):
+		return CatAPI
+	case strings.Contains(rules, "delisting"):
+		return CatDelisting
+	case strings.Contains(rules, "maintenance"), strings.Contains(rules, "incident"),
+		strings.Contains(rules, "network-upgrade"), strings.Contains(rules, "settlement"):
+		return CatMaintenance
+	case strings.Contains(rules, "promo"):
+		return CatPromo
+	case strings.Contains(rules, "listing"):
+		return CatListing
+	default:
+		return CatOther
+	}
 }
 
 // MarketsString renders the market types as a compact, human-friendly label.

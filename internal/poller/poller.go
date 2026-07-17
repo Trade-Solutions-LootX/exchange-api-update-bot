@@ -208,7 +208,7 @@ func (p *Poller) handleFirstRun(s sources.Source, items []model.Announcement) {
 	}
 	for _, a := range items {
 		key := a.DedupKey()
-		if backfillKeys[key] && !p.control.IsMuted(a.Exchange) {
+		if backfillKeys[key] && !p.control.IsMuted(a.Exchange) && p.control.IsSubscribed(a.Category()) {
 			// Backfill bypasses the importance filter so every exchange emits at
 			// least one confirming message. Skip if another feed of the same
 			// exchange already delivered this exact article (shared DedupKey),
@@ -240,6 +240,11 @@ func (p *Poller) handleUpdates(items []model.Announcement) {
 		}
 		if p.control.IsMuted(a.Exchange) {
 			// Muted: drop (mark seen) so the backlog doesn't flood after unmute.
+			p.store.MarkSeen(key, time.Now())
+			continue
+		}
+		if !p.control.IsSubscribed(a.Category()) {
+			// Unsubscribed category (e.g. delistings/promos): drop it.
 			p.store.MarkSeen(key, time.Now())
 			continue
 		}

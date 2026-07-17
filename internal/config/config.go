@@ -47,7 +47,15 @@ type Config struct {
 	// provider's balance API and posts a once-daily "payment due" summary.
 	DigitalOceanToken string
 	VultrAPIKey       string
+	RenderAPIKey      string
 	BillingInterval   time.Duration
+
+	// Server monitoring via each box's /v1/system/metrics handle (bearer-authed),
+	// same as trading-terminal-cloud. Format: "name|url|token;name2|url2|token2".
+	ServerMetricsRaw string
+	ServerInterval   time.Duration
+	ServerTimeout    time.Duration
+	LoadDiskPercent  float64
 
 	// Uptime monitoring of your OWN endpoints. UPTIME_TARGETS is a comma list of
 	// "name=url" (or bare "url"); the bot alerts on down and recovery.
@@ -101,7 +109,12 @@ func Load() (*Config, error) {
 		TelegramChatID:     getString("TELEGRAM_CHAT_ID", ""),
 		DigitalOceanToken:  getString("DIGITALOCEAN_API_TOKEN", ""),
 		VultrAPIKey:        getString("VULTR_API_KEY", ""),
+		RenderAPIKey:       getString("RENDER_API_KEY", ""),
 		BillingInterval:    getDuration("BILLING_INTERVAL", 6*time.Hour),
+		ServerMetricsRaw:   getString("SERVER_METRICS", ""),
+		ServerInterval:     getDuration("SERVER_INTERVAL", 60*time.Second),
+		ServerTimeout:      getDuration("SERVER_TIMEOUT", 10*time.Second),
+		LoadDiskPercent:    float64(getInt("LOAD_DISK_PERCENT", 90)),
 		UptimeTargetsRaw:   getString("UPTIME_TARGETS", ""),
 		UptimeInterval:     getDuration("UPTIME_INTERVAL", 60*time.Second),
 		UptimeTimeout:      getDuration("UPTIME_TIMEOUT", 10*time.Second),

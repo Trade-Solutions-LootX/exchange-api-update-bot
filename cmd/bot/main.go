@@ -134,10 +134,21 @@ func run() error {
 		log.Info("uptime monitoring enabled", "targets", names, "interval", cfg.UptimeInterval.String())
 	}
 
-	// Provider load monitoring (DigitalOcean metrics API).
+	// Provider load monitoring (DigitalOcean metrics API — needs the DO agent).
 	if cfg.LoadMonitoring && cfg.DigitalOceanToken != "" {
 		srcs = append(srcs, sources.NewDigitalOceanLoad(cfg.DigitalOceanToken, cfg.LoadCPUPercent, cfg.LoadMemPercent, cfg.LoadInterval, deps))
 		log.Info("digitalocean load monitoring enabled", "cpu_pct", cfg.LoadCPUPercent, "mem_pct", cfg.LoadMemPercent)
+	}
+
+	// Server monitoring via each box's /v1/system/metrics handle (no agent).
+	serverTargets := sources.ParseServerTargets(cfg.ServerMetricsRaw)
+	if len(serverTargets) > 0 {
+		srcs = append(srcs, sources.NewServerMetricsSource(serverTargets, cfg.LoadCPUPercent, cfg.LoadMemPercent, cfg.LoadDiskPercent, cfg.ServerInterval, cfg.ServerTimeout))
+		names := make([]string, len(serverTargets))
+		for i, t := range serverTargets {
+			names[i] = t.Name
+		}
+		log.Info("server metrics monitoring enabled", "servers", names, "interval", cfg.ServerInterval.String())
 	}
 
 	if len(srcs) == 0 {
@@ -160,7 +171,18 @@ func run() error {
 
 	// Interactive command handler (needs a real bot; off in dry-run).
 	if !cfg.DryRun {
-		b := bot.New(sender, ctrl, p, srcs, log)
+		b := bot.New(bot.Deps{
+			Sender:    sender,
+			Control:   ctrl,
+			Poller:    p,
+			Sources:   srcs,
+			HTTP:      hc,
+			DOToken:   cfg.DigitalOceanToken,
+			VultrKey:  cfg.VultrAPIKey,
+			RenderKey: cfg.RenderAPIKey,
+			Servers:   serverTargets,
+			Log:       log,
+		})
 		go b.Run(ctx)
 	}
 

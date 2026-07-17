@@ -20,14 +20,50 @@ type Controller struct {
 	defaultMin model.Importance
 	minSet     bool
 	min        model.Importance
+	subs       map[model.Category]bool // category → subscribed
 }
 
-// New builds a Controller with the configured default min importance.
+// New builds a Controller with the configured default min importance. By
+// default every category is subscribed EXCEPT delistings and promos (the noise
+// the user asked to hide) — all are toggleable at runtime via /subscribe.
 func New(defaultMin model.Importance) *Controller {
+	subs := map[model.Category]bool{}
+	for _, c := range model.AllCategories {
+		subs[c] = true
+	}
+	subs[model.CatDelisting] = false
+	subs[model.CatPromo] = false
 	return &Controller{
 		muted:      map[string]time.Time{},
 		defaultMin: defaultMin,
+		subs:       subs,
 	}
+}
+
+// IsSubscribed reports whether the given category is currently delivered.
+func (c *Controller) IsSubscribed(cat model.Category) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.subs[cat]
+}
+
+// ToggleSubscription flips a category and returns its new state.
+func (c *Controller) ToggleSubscription(cat model.Category) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.subs[cat] = !c.subs[cat]
+	return c.subs[cat]
+}
+
+// Subscriptions returns a snapshot of category → subscribed.
+func (c *Controller) Subscriptions() map[model.Category]bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := map[model.Category]bool{}
+	for k, v := range c.subs {
+		out[k] = v
+	}
+	return out
 }
 
 // Mute silences an exchange/provider slug for d (0 = until unmuted).

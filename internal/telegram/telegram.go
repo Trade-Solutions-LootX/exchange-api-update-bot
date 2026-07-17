@@ -155,8 +155,8 @@ type InlineKeyboard struct {
 // alertKeyboard builds the mute/ack controls shown under every alert.
 func alertKeyboard(slug string) InlineKeyboard {
 	return InlineKeyboard{Inline: [][]InlineButton{{
-		{Text: "🔕 Mute " + strings.ToUpper(slug) + " 24h", Data: "m|" + slug + "|24h"},
-		{Text: "✅ OK", Data: "ok"},
+		{Text: "🔕 Замьютить " + strings.ToUpper(slug) + " на 24ч", Data: "m|" + slug + "|24h"},
+		{Text: "✅ Ок", Data: "ok"},
 	}}}
 }
 
