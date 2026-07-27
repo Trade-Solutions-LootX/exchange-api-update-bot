@@ -168,6 +168,11 @@ func (a Announcement) Category() Category {
 	if a.hasMarket(MarketAPI) {
 		return CatAPI
 	}
+	// Earn/staking/launchpool campaigns are promo-grade noise (unless they were
+	// already flagged as API above).
+	if a.hasMarket(MarketEarn) {
+		return CatPromo
+	}
 	rules := strings.Join(a.MatchedRules, ",")
 	switch {
 	case strings.Contains(rules, "api-"), strings.Contains(rules, ":api"):

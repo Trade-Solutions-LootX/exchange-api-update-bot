@@ -24,15 +24,17 @@ type Controller struct {
 }
 
 // New builds a Controller with the configured default min importance. By
-// default every category is subscribed EXCEPT delistings and promos (the noise
-// the user asked to hide) — all are toggleable at runtime via /subscribe.
+// default ONLY API updates and service info (hosting status + billing) are
+// delivered; listings, delistings, tournaments/promos, exchange maintenance and
+// misc are OFF (the noise the user asked to hide). All toggleable via /subscribe.
 func New(defaultMin model.Importance) *Controller {
 	subs := map[model.Category]bool{}
 	for _, c := range model.AllCategories {
-		subs[c] = true
+		subs[c] = false
 	}
-	subs[model.CatDelisting] = false
-	subs[model.CatPromo] = false
+	subs[model.CatAPI] = true
+	subs[model.CatInfra] = true
+	subs[model.CatBilling] = true
 	return &Controller{
 		muted:      map[string]time.Time{},
 		defaultMin: defaultMin,

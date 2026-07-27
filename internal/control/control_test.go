@@ -39,22 +39,25 @@ func TestMuteExpires(t *testing.T) {
 
 func TestSubscriptionDefaultsAndToggle(t *testing.T) {
 	c := New(model.ImportanceLow)
-	// Defaults: delistings + promos OFF, everything else ON.
-	if c.IsSubscribed(model.CatDelisting) {
-		t.Error("delistings should be off by default")
+	// Default: ONLY api + infra + billing are on.
+	on := map[model.Category]bool{model.CatAPI: true, model.CatInfra: true, model.CatBilling: true}
+	for _, cat := range model.AllCategories {
+		if got := c.IsSubscribed(cat); got != on[cat] {
+			t.Errorf("default IsSubscribed(%s) = %v, want %v", cat, got, on[cat])
+		}
 	}
-	if c.IsSubscribed(model.CatPromo) {
-		t.Error("promos should be off by default")
+	// Listings/delistings/promos are banned by default.
+	for _, cat := range []model.Category{model.CatListing, model.CatDelisting, model.CatPromo, model.CatMaintenance, model.CatOther} {
+		if c.IsSubscribed(cat) {
+			t.Errorf("%s must be off by default", cat)
+		}
 	}
-	if !c.IsSubscribed(model.CatAPI) || !c.IsSubscribed(model.CatInfra) {
-		t.Error("api/infra should be on by default")
+	// Toggle listings on then off.
+	if !c.ToggleSubscription(model.CatListing) {
+		t.Error("toggle should turn listings on")
 	}
-	// Toggle delistings on.
-	if on := c.ToggleSubscription(model.CatDelisting); !on {
-		t.Error("toggle should turn delistings on")
-	}
-	if !c.IsSubscribed(model.CatDelisting) {
-		t.Error("delistings should now be on")
+	if c.ToggleSubscription(model.CatListing) {
+		t.Error("second toggle should turn listings off")
 	}
 }
 

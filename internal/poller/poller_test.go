@@ -41,6 +41,13 @@ func newTestPoller(t *testing.T, cfg *config.Config) (*Poller, *store.Store) {
 	hc := httpx.New(time.Second, "t", log)
 	sender := telegram.New("", "", true, hc, log) // dry-run, never actually sends
 	ctrl := control.New(cfg.MinImportance)
+	// These tests exercise mute/importance/backfill, not subscriptions — enable
+	// every category so the (default-restrictive) subscription filter is inert.
+	for _, c := range model.AllCategories {
+		if !ctrl.IsSubscribed(c) {
+			ctrl.ToggleSubscription(c)
+		}
+	}
 	return New(cfg, nil, st, sender, ctrl, log), st
 }
 
