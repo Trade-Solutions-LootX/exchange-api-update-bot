@@ -251,14 +251,18 @@ func (b *Bot) cmdServers(ctx context.Context) {
 	var sb strings.Builder
 	sb.WriteString("🖥 <b>Серверы</b>\n")
 	for _, t := range b.d.Servers {
-		m, err := sources.FetchServerMetrics(cctx, b.httpClient, t)
-		if err != nil {
-			sb.WriteString("\n<b>" + esc(t.Name) + "</b> — 🔴 недоступен (" + esc(short(err.Error())) + ")\n")
-			continue
+		pr := sources.ProbeServer(cctx, b.httpClient, t)
+		switch {
+		case !pr.Reachable:
+			sb.WriteString("\n<b>" + esc(t.Name) + "</b> — 🔴 <b>недоступен</b> (" + esc(pr.Reason) + ")\n")
+		case pr.Metrics != nil:
+			m := pr.Metrics
+			sb.WriteString(fmt.Sprintf("\n<b>%s</b> — 🟢 up %s\n  CPU %.0f%% · RAM %.0f%% · диск %.0f%%\n  load %.2f / %.2f / %.2f\n",
+				esc(t.Name), humanUptime(m.UptimeSecs), m.CPU.UsagePct, m.Mem.UsedPct, m.Disk.UsedPct,
+				m.CPU.Load1, m.CPU.Load5, m.CPU.Load15))
+		default:
+			sb.WriteString("\n<b>" + esc(t.Name) + "</b> — 🟢 up (метрики закрыты — добавьте токен)\n")
 		}
-		sb.WriteString(fmt.Sprintf("\n<b>%s</b> — 🟢 up %s\n  CPU %.0f%% · RAM %.0f%% · диск %.0f%%\n  load %.2f / %.2f / %.2f\n",
-			esc(t.Name), humanUptime(m.UptimeSecs), m.CPU.UsagePct, m.Mem.UsedPct, m.Disk.UsedPct,
-			m.CPU.Load1, m.CPU.Load5, m.CPU.Load15))
 	}
 	b.reply(cctx, sb.String())
 }

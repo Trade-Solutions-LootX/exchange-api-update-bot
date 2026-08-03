@@ -24,14 +24,14 @@ func TestParseServerTargets(t *testing.T) {
 	}
 }
 
-func TestFetchServerMetrics(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/system/metrics" {
-			w.WriteHeader(404)
+func metricsServer(status int) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if status == 200 && r.Header.Get("Authorization") != "Bearer secret" {
+			w.WriteHeader(401)
 			return
 		}
-		if r.Header.Get("Authorization") != "Bearer secret" {
-			w.WriteHeader(401)
+		if status != 200 {
+			w.WriteHeader(status)
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -41,14 +41,39 @@ func TestFetchServerMetrics(t *testing.T) {
 			"disk": map[string]any{"mount": "/", "used_pct": 55.0},
 		})
 	}))
-	defer srv.Close()
+}
 
-	m, err := FetchServerMetrics(context.Background(), srv.Client(), ServerTarget{Name: "b", URL: srv.URL, Token: "secret"})
-	if err != nil {
-		t.Fatalf("fetch: %v", err)
+func TestProbeServerWithToken(t *testing.T) {
+	srv := metricsServer(200)
+	defer srv.Close()
+	pr := ProbeServer(context.Background(), srv.Client(), ServerTarget{Name: "b", URL: srv.URL, Token: "secret"})
+	if !pr.Reachable || pr.Metrics == nil {
+		t.Fatalf("want reachable+metrics, got %+v", pr)
 	}
-	if m.Hostname != "box1" || m.CPU.UsagePct != 91.5 || m.Mem.UsedPct != 40 {
-		t.Fatalf("decoded wrong: %+v", m)
+	if pr.Metrics.CPU.UsagePct != 91.5 || pr.Metrics.Mem.UsedPct != 40 {
+		t.Fatalf("decoded wrong: %+v", pr.Metrics)
+	}
+}
+
+func TestProbeServer401IsReachableNoMetrics(t *testing.T) {
+	// No token → 401. The server is UP (reachable) but we can't read metrics.
+	srv := metricsServer(200)
+	defer srv.Close()
+	pr := ProbeServer(context.Background(), srv.Client(), ServerTarget{Name: "b", URL: srv.URL, Token: ""})
+	if !pr.Reachable {
+		t.Fatalf("401 must count as reachable (server is alive): %+v", pr)
+	}
+	if pr.Metrics != nil {
+		t.Fatalf("no metrics expected without token")
+	}
+}
+
+func TestProbeServer5xxIsDown(t *testing.T) {
+	srv := metricsServer(503)
+	defer srv.Close()
+	pr := ProbeServer(context.Background(), srv.Client(), ServerTarget{Name: "b", URL: srv.URL})
+	if pr.Reachable {
+		t.Fatalf("5xx must count as DOWN: %+v", pr)
 	}
 }
 

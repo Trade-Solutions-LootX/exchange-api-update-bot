@@ -75,30 +75,64 @@ func ParseServerTargets(spec string) []ServerTarget {
 	return out
 }
 
-// FetchServerMetrics probes one server's /v1/system/metrics (used by the source
-// and by the /servers command).
-func FetchServerMetrics(ctx context.Context, client *http.Client, t ServerTarget) (*SystemMetrics, error) {
+// ProbeResult is the outcome of probing one server's /v1/system/metrics.
+//
+// Liveness is decoupled from auth on purpose: a healthy box that requires a
+// token still answers (401/403), which proves it is UP — so we can alert on a
+// dead server WITHOUT any token. Only a transport error or a 5xx means DOWN.
+type ProbeResult struct {
+	Reachable bool           // true unless transport error or 5xx
+	Status    int            // HTTP status (0 on transport error)
+	Metrics   *SystemMetrics // set only on 200 with valid JSON
+	Reason    string         // why down / why no metrics
+}
+
+// ProbeServer probes one server's /v1/system/metrics.
+func ProbeServer(ctx context.Context, client *http.Client, t ServerTarget) ProbeResult {
 	url := strings.TrimRight(t.URL, "/") + "/v1/system/metrics"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return ProbeResult{Reachable: false, Reason: err.Error()}
 	}
 	if t.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+t.Token)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return ProbeResult{Reachable: false, Reason: transportReason(err)}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	if resp.StatusCode >= 500 {
+		return ProbeResult{Reachable: false, Status: resp.StatusCode, Reason: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
-	var m SystemMetrics
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
-		return nil, fmt.Errorf("bad metrics json: %w", err)
+	pr := ProbeResult{Reachable: true, Status: resp.StatusCode}
+	if resp.StatusCode == http.StatusOK {
+		var m SystemMetrics
+		if json.NewDecoder(resp.Body).Decode(&m) == nil {
+			pr.Metrics = &m
+		} else {
+			pr.Reason = "невалидный JSON метрик"
+		}
+	} else {
+		pr.Reason = fmt.Sprintf("HTTP %d (нужен токен?)", resp.StatusCode)
 	}
-	return &m, nil
+	return pr
+}
+
+func transportReason(err error) string {
+	s := err.Error()
+	switch {
+	case strings.Contains(s, "context deadline"), strings.Contains(s, "timeout"), strings.Contains(s, "Timeout"):
+		return "таймаут"
+	case strings.Contains(s, "connection refused"):
+		return "соединение отклонено"
+	case strings.Contains(s, "no such host"), strings.Contains(s, "server misbehaving"):
+		return "DNS не резолвится"
+	}
+	if len(s) > 80 {
+		s = s[:80] + "…"
+	}
+	return s
 }
 
 // serverMetricsSource alerts when a server's CPU/RAM/disk crosses a threshold
@@ -142,25 +176,25 @@ func (s *serverMetricsSource) Fetch(ctx context.Context) ([]model.Announcement, 
 	now := time.Now().UTC()
 	var alerts []model.Announcement
 	for _, t := range s.targets {
-		m, err := FetchServerMetrics(ctx, s.client, t)
-		if err != nil {
-			if a, ok := s.transition(t.Name, "reach", true, fmt.Sprintf("%s недоступен (%s)", t.Name, err.Error()), now); ok {
+		pr := ProbeServer(ctx, s.client, t)
+		// Liveness alert (works even without a token: only a real outage flips
+		// this, since 401/403 still count as reachable).
+		if a, ok := s.transition(t.Name, "reach", !pr.Reachable,
+			fmt.Sprintf("%s недоступен (%s)", t.Name, pr.Reason), now); ok {
+			alerts = append(alerts, a)
+		}
+		// Resource thresholds only when we actually have metrics (200 + token).
+		if pr.Reachable && pr.Metrics != nil {
+			m := pr.Metrics
+			if a, ok := s.check(t.Name, "CPU", "cpu", m.CPU.UsagePct, s.cpuPct, now); ok {
 				alerts = append(alerts, a)
 			}
-			continue
-		}
-		// Reachable again?
-		if a, ok := s.transition(t.Name, "reach", false, "", now); ok {
-			alerts = append(alerts, a)
-		}
-		if a, ok := s.check(t.Name, "CPU", "cpu", m.CPU.UsagePct, s.cpuPct, now); ok {
-			alerts = append(alerts, a)
-		}
-		if a, ok := s.check(t.Name, "RAM", "mem", m.Mem.UsedPct, s.memPct, now); ok {
-			alerts = append(alerts, a)
-		}
-		if a, ok := s.check(t.Name, "диск", "disk", m.Disk.UsedPct, s.diskPct, now); ok {
-			alerts = append(alerts, a)
+			if a, ok := s.check(t.Name, "RAM", "mem", m.Mem.UsedPct, s.memPct, now); ok {
+				alerts = append(alerts, a)
+			}
+			if a, ok := s.check(t.Name, "диск", "disk", m.Disk.UsedPct, s.diskPct, now); ok {
+				alerts = append(alerts, a)
+			}
 		}
 	}
 	return alerts, nil
