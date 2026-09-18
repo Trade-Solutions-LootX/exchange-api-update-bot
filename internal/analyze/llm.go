@@ -30,7 +30,7 @@ const (
 var DefaultModel = map[Provider]string{
 	ProviderAnthropic: "claude-opus-5",
 	ProviderOpenAI:    "gpt-5",
-	ProviderDeepSeek:  "deepseek-chat",
+	ProviderDeepSeek:  "deepseek-v4-pro",
 }
 
 // LLM is a minimal "system + user → text" completion client.
@@ -144,8 +144,16 @@ func (l *LLM) openAICompatible(ctx context.Context, system, user string, maxToke
 			{"role": "system", "content": system},
 			{"role": "user", "content": user},
 		},
-		"response_format":       map[string]string{"type": "json_object"},
-		"max_completion_tokens": maxTokens,
+		"response_format": map[string]string{"type": "json_object"},
+	}
+	if l.provider == ProviderDeepSeek {
+		// DeepSeek: thinking mode at the highest effort; max_tokens there covers
+		// reasoning + answer, so give it room.
+		payload["max_tokens"] = max(maxTokens, 32000)
+		payload["thinking"] = map[string]string{"type": "enabled"}
+		payload["reasoning_effort"] = "max"
+	} else {
+		payload["max_completion_tokens"] = maxTokens
 	}
 	body, _ := json.Marshal(payload)
 	resp, err := l.http.Post(ctx, l.baseURL+"/v1/chat/completions", body, map[string]string{
