@@ -26,6 +26,9 @@ type Task struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// Text is the plain-text description (ClickUp returns both `description`
+	// and `text_content`; the latter is the rendered plain text).
+	Text string `json:"text_content"`
 }
 
 // NewClickUp builds a client; token goes into the Authorization header as-is.
@@ -61,12 +64,14 @@ func (c *ClickUp) CreateTask(ctx context.Context, name, markdown string, priorit
 	return &t, nil
 }
 
-// FindOpenByName returns an open task in the list carrying our tag whose name
-// matches (case-insensitive), or nil.
-func (c *ClickUp) FindOpenByName(ctx context.Context, name string) (*Task, error) {
+// ListOpenTagged returns the open tasks in the list carrying our tag, newest
+// first (first page, 100 max — the dedup only needs recent ones).
+func (c *ClickUp) ListOpenTagged(ctx context.Context) ([]Task, error) {
 	q := url.Values{}
 	q.Set("include_closed", "false")
 	q.Set("subtasks", "false")
+	q.Set("order_by", "created")
+	q.Set("reverse", "true")
 	q.Add("tags[]", c.tag)
 	resp, err := c.http.Get(ctx, fmt.Sprintf("%s/list/%s/task?%s", clickupBase, c.listID, q.Encode()), c.headers())
 	if err != nil {
@@ -78,13 +83,32 @@ func (c *ClickUp) FindOpenByName(ctx context.Context, name string) (*Task, error
 	if err := json.Unmarshal(resp, &out); err != nil {
 		return nil, fmt.Errorf("clickup decode: %w", err)
 	}
+	return out.Tasks, nil
+}
+
+// FindOpenByName returns an open task in the list carrying our tag whose name
+// matches (case-insensitive), or nil.
+func (c *ClickUp) FindOpenByName(ctx context.Context, name string) (*Task, error) {
+	tasks, err := c.ListOpenTagged(ctx)
+	if err != nil {
+		return nil, err
+	}
 	want := strings.ToLower(strings.TrimSpace(name))
-	for i := range out.Tasks {
-		if strings.ToLower(strings.TrimSpace(out.Tasks[i].Name)) == want {
-			return &out.Tasks[i], nil
+	for i := range tasks {
+		if strings.ToLower(strings.TrimSpace(tasks[i].Name)) == want {
+			return &tasks[i], nil
 		}
 	}
 	return nil, nil
+}
+
+// AddComment appends a plain-text comment to a task.
+func (c *ClickUp) AddComment(ctx context.Context, taskID, text string) error {
+	body, _ := json.Marshal(map[string]any{"comment_text": text, "notify_all": false})
+	if _, err := c.http.Post(ctx, fmt.Sprintf("%s/task/%s/comment", clickupBase, url.PathEscape(taskID)), body, c.headers()); err != nil {
+		return fmt.Errorf("clickup comment: %w", err)
+	}
+	return nil
 }
 
 // Probe checks the token + list (used at startup so a bad token is loud).

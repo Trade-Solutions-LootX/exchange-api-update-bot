@@ -115,6 +115,7 @@ type Analyzer struct {
 	analyzed int
 	skipped  int
 	tasks    int
+	merged   int
 	errors   int
 }
 
@@ -154,6 +155,7 @@ type Stats struct {
 	Analyzed int `json:"analyzed"`
 	Skipped  int `json:"skipped"`
 	Tasks    int `json:"tasks_created"`
+	Merged   int `json:"merged_into_existing"`
 	Errors   int `json:"errors"`
 	Queued   int `json:"queued"`
 }
@@ -162,7 +164,7 @@ type Stats struct {
 func (a *Analyzer) Snapshot() Stats {
 	a.statsMu.Lock()
 	defer a.statsMu.Unlock()
-	return Stats{Analyzed: a.analyzed, Skipped: a.skipped, Tasks: a.tasks, Errors: a.errors, Queued: len(a.queue)}
+	return Stats{Analyzed: a.analyzed, Skipped: a.skipped, Tasks: a.tasks, Merged: a.merged, Errors: a.errors, Queued: len(a.queue)}
 }
 
 func analyzedKey(a model.Announcement) string { return "ai:" + a.DedupKey() }
@@ -384,6 +386,18 @@ func (a *Analyzer) fileTask(ctx context.Context, ann model.Announcement, v *Verd
 	if existing, err := a.clickup.FindOpenByName(ctx, title); err == nil && existing != nil {
 		a.store.MarkSeen(taskKey(ann), time.Now())
 		return existing.URL, nil
+	}
+	// Cross-source dedup: the same change seen via another feed / docs commit
+	// goes into the existing task as a comment with the new link.
+	if dup, err := a.findDuplicate(ctx, ann, v); err != nil {
+		a.log.Warn("dedup check failed, creating task", "title", ann.Title, "err", err)
+	} else if dup != nil {
+		if err := a.clickup.AddComment(ctx, dup.ID, mergeComment(ann, v)); err != nil {
+			return "", err
+		}
+		a.store.MarkSeen(taskKey(ann), time.Now())
+		a.bump(&a.merged)
+		return dup.URL, nil
 	}
 	prio := 2 // high
 	if v.Importance == "critical" {

@@ -134,3 +134,14 @@ func TestIsNoise(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeComment(t *testing.T) {
+	ann := model.Announcement{Exchange: "bybit", Title: "docs: remove checksum from orderbook", URL: "https://github.com/bybit-exchange/docs/commit/abc", Source: "bybit:api-docs"}
+	v := &Verdict{Importance: "high", Summary: "Убрали checksum.", Changes: []string{"orderbook.50: поле checksum удалено"}, Actions: []string{"Отключить проверку"}, EffectiveAt: "2026-10-01"}
+	c := mergeComment(ann, v)
+	for _, want := range []string{"https://github.com/bybit-exchange/docs/commit/abc", "bybit:api-docs", "checksum удалено", "Отключить проверку", "2026-10-01"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("comment missing %q:\n%s", want, c)
+		}
+	}
+}
