@@ -69,7 +69,31 @@ type Options struct {
 	// preview is usually a sentence or two).
 	FetchArticle bool
 	MaxArticle   int
+	// SkipTitle: announcements whose title matches are dropped before the
+	// model sees them (listings, promos, earn…). nil = DefaultSkipTitle.
+	SkipTitle *regexp.Regexp
 }
+
+// DefaultSkipTitle is the noise filter applied before the model: coin
+// listings / delistings, promos, earn products, competitions. None of these
+// change the API contract, and the owner explicitly does not want tasks for
+// them. Anything whose title mentions the API surface passes regardless
+// (keepTitle), so an API change hidden in a "delisting" post still gets read.
+var DefaultSkipTitle = regexp.MustCompile(`(?i)(` +
+	`will (list|delist|launch|add|support|open trading)|new listing|listing of|delist(ing|ed)? |` +
+	`launchpool|launchpad|megadrop|\balpha\b|\bearn\b|savings|staking|` +
+	`airdrop|giveaway|promotion|campaign|competition|contest|carnival|festival|bonus|reward|lucky draw|voucher|` +
+	`trading pair|spot trading pair|perpetual contract|perpetual( futures)? (listing|launch)|pre-market|` +
+	`copy trading|grid bot|trading bot|referral|vip |affiliate|` +
+	`fiat|deposit|withdrawal|p2p|\bcard\b|\bconvert\b|\bloan|margin (interest|rate)|funding rate (adjust|update)|` +
+	`token (swap|migration|rename)|network (upgrade|maintenance)|wallet maintenance|` +
+	`leverage adjust|tick size|price precision|minimum order|position limit|` +
+	`hot (coin|token|project)|\bmeme|web3|\bnft\b|square|community|live stream|\bama\b` +
+	`)`)
+
+// keepTitle overrides the skip list: if the title itself talks about the
+// API surface, it is never treated as noise.
+var keepTitle = regexp.MustCompile(`(?i)\b(api|websocket|ws|endpoint|rate limit|sdk|listenkey|signature|deprecat|sunset|v[0-9]\b|unified|migrat)`)
 
 // Analyzer is the async worker: Submit enqueues, Run drains.
 type Analyzer struct {
@@ -89,6 +113,7 @@ type Analyzer struct {
 
 	statsMu  sync.Mutex
 	analyzed int
+	skipped  int
 	tasks    int
 	errors   int
 }
@@ -127,6 +152,7 @@ func New(llm *LLM, pageClient *httpx.Client, st *store.Store, sender *telegram.S
 // Stats is a snapshot for /stats.
 type Stats struct {
 	Analyzed int `json:"analyzed"`
+	Skipped  int `json:"skipped"`
 	Tasks    int `json:"tasks_created"`
 	Errors   int `json:"errors"`
 	Queued   int `json:"queued"`
@@ -136,7 +162,7 @@ type Stats struct {
 func (a *Analyzer) Snapshot() Stats {
 	a.statsMu.Lock()
 	defer a.statsMu.Unlock()
-	return Stats{Analyzed: a.analyzed, Tasks: a.tasks, Errors: a.errors, Queued: len(a.queue)}
+	return Stats{Analyzed: a.analyzed, Skipped: a.skipped, Tasks: a.tasks, Errors: a.errors, Queued: len(a.queue)}
 }
 
 func analyzedKey(a model.Announcement) string { return "ai:" + a.DedupKey() }
@@ -153,6 +179,12 @@ func (a *Analyzer) Submit(ann model.Announcement) {
 	}
 	key := analyzedKey(ann)
 	if a.store.IsSeen(key) {
+		return
+	}
+	if a.isNoise(ann) {
+		a.store.MarkSeen(key, time.Now())
+		a.bump(&a.skipped)
+		a.log.Debug("analysis skipped as noise", "exchange", ann.Exchange, "title", ann.Title)
 		return
 	}
 	a.mu.Lock()
@@ -214,6 +246,23 @@ func (a *Analyzer) process(ctx context.Context, ann model.Announcement) {
 	}
 	a.bump(&a.tasks)
 	a.notify(ctx, ann, v, url)
+}
+
+// isNoise: feed category or title says listing/promo/earn and nothing in the
+// title points at the API surface.
+func (a *Analyzer) isNoise(ann model.Announcement) bool {
+	if keepTitle.MatchString(ann.Title) {
+		return false
+	}
+	src := strings.ToLower(ann.Source)
+	if strings.Contains(src, "listing") || strings.Contains(src, "delisting") {
+		return true
+	}
+	skip := a.opts.SkipTitle
+	if skip == nil {
+		skip = DefaultSkipTitle
+	}
+	return skip.MatchString(ann.Title)
 }
 
 func (a *Analyzer) shouldFileTask(v *Verdict) bool {

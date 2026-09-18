@@ -105,3 +105,32 @@ func TestBuildUserPrompt(t *testing.T) {
 		t.Errorf("article should be present and truncated: %q", p)
 	}
 }
+
+func TestIsNoise(t *testing.T) {
+	a := &Analyzer{}
+	noise := []model.Announcement{
+		{Source: "binance:new-listings", Title: "Binance Will List Foo (FOO)"},
+		{Source: "bybit:announcements", Title: "Bybit Launchpool: Stake USDT to earn BAR"},
+		{Source: "okx:announcements", Title: "OKX to delist several spot trading pairs"},
+		{Source: "bitget:announcements", Title: "Adjustment of leverage and tick size for XYZUSDT"},
+		{Source: "kucoin:announcements", Title: "Trading competition: share 100,000 USDT prize pool"},
+	}
+	for _, n := range noise {
+		if !a.isNoise(n) {
+			t.Errorf("should be noise: %q", n.Title)
+		}
+	}
+	keep := []model.Announcement{
+		{Source: "binance:api-updates", Title: "Binance Spot API: depth stream now supports 5000 levels"},
+		{Source: "binance:delisting", Title: "Delisting of the /sapi/v1/margin/loan endpoint"},
+		{Source: "bybit:announcements", Title: "Unified Trading Account migration deadline"},
+		{Source: "okx:announcements", Title: "WebSocket order book channel update: checksum removed"},
+		{Source: "gate:announcements", Title: "Rate limit changes for futures order placement"},
+		{Source: "aster:api-docs", Title: "add batch order endpoint"},
+	}
+	for _, k := range keep {
+		if a.isNoise(k) {
+			t.Errorf("should NOT be noise: %q", k.Title)
+		}
+	}
+}

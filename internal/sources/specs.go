@@ -418,5 +418,19 @@ func RSSSpecs() []RSSSpec {
 			Name:     "sdk-commits",
 			URL:      "https://github.com/elliottech/lighter-python/commits/main.atom",
 		},
+
+		// ── Official API-docs / SDK repos of the CEXes ───────────────────
+		// The announcement feeds above are the human channel; the docs repos
+		// are where the changelog actually lands (often earlier, always with
+		// the exact endpoint/field). Commit streams are noisy (typos, i18n),
+		// so APIUpdatesFeed stays false — the LLM analyzer judges each one.
+		{Exchange: "binance", Name: "spot-api-docs", URL: "https://github.com/binance/binance-spot-api-docs/commits/master.atom"},
+		{Exchange: "bybit", Name: "api-docs", URL: "https://github.com/bybit-exchange/docs/commits/main.atom"},
+		{Exchange: "bingx", Name: "swap-api-docs", URL: "https://github.com/BingX-API/BingX-swap-api-doc/commits/master.atom"},
+		{Exchange: "bingx", Name: "spot-api-docs", URL: "https://github.com/BingX-API/BingX-spot-api-doc/commits/master.atom"},
+		{Exchange: "gate", Name: "sdk-commits", URL: "https://github.com/gateio/gateapi-python/commits/master.atom"},
+		{Exchange: "kucoin", Name: "sdk-commits", URL: "https://github.com/Kucoin/kucoin-universal-sdk/commits/main.atom"},
+		{Exchange: "mexc", Name: "sdk-commits", URL: "https://github.com/mexcdevelop/mexc-api-sdk/commits/main.atom"},
+		{Exchange: "hyperliquid", Name: "rust-sdk-commits", URL: "https://github.com/hyperliquid-dex/hyperliquid-rust-sdk/commits/master.atom"},
 	}
 }

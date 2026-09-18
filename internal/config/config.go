@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +84,8 @@ type Config struct {
 	// AnalyzeMinTask: file a ClickUp task only at/above this model importance.
 	AnalyzeMinTask string
 	AnalyzeFetch   bool
+	// AnalyzeSkipTitle: regexp of titles never sent to the model (empty = built-in default).
+	AnalyzeSkipTitle string
 	// ClickUp target for tasks (empty token = analysis only, no tasks).
 	ClickUpToken  string
 	ClickUpListID string
@@ -148,6 +151,7 @@ func Load() (*Config, error) {
 		AnalyzeScope:       strings.ToLower(getString("ANALYZE_SCOPE", "all")),
 		AnalyzeMinTask:     strings.ToLower(getString("ANALYZE_MIN_TASK", "high")),
 		AnalyzeFetch:       getBool("ANALYZE_FETCH_ARTICLE", true),
+		AnalyzeSkipTitle:   getString("ANALYZE_SKIP_TITLE", ""),
 		ClickUpToken:       getString("CLICKUP_TOKEN", ""),
 		ClickUpListID:      getString("CLICKUP_LIST_ID", "901818340919"),
 		ClickUpTag:         getString("CLICKUP_TAG", "exchange-api"),
@@ -173,6 +177,11 @@ func Load() (*Config, error) {
 	}
 	if c.AnalyzeScope != "all" && c.AnalyzeScope != "api" {
 		return nil, fmt.Errorf("ANALYZE_SCOPE must be all|api, got %q", c.AnalyzeScope)
+	}
+	if c.AnalyzeSkipTitle != "" {
+		if _, err := regexp.Compile("(?i)" + c.AnalyzeSkipTitle); err != nil {
+			return nil, fmt.Errorf("ANALYZE_SKIP_TITLE: %w", err)
+		}
 	}
 	if c.LLMTimeout < 10*time.Second {
 		return nil, fmt.Errorf("LLM_TIMEOUT too small (%s); minimum 10s", c.LLMTimeout)

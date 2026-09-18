@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -167,6 +168,10 @@ func run() error {
 	// LLM news analysis → urgent ClickUp tasks. Optional: needs LLM_API_KEY.
 	var an *analyze.Analyzer
 	if cfg.LLMAPIKey != "" {
+		var skipTitle *regexp.Regexp
+		if cfg.AnalyzeSkipTitle != "" {
+			skipTitle = regexp.MustCompile("(?i)" + cfg.AnalyzeSkipTitle) // validated in config
+		}
 		llmHTTP := httpx.New(cfg.LLMTimeout, cfg.UserAgent, log, httpx.WithMaxRetries(1))
 		llm, err := analyze.NewLLM(analyze.Provider(cfg.LLMProvider), cfg.LLMAPIKey, cfg.LLMModel, cfg.LLMBaseURL, llmHTTP)
 		if err != nil {
@@ -180,6 +185,7 @@ func run() error {
 			ClickUpTag:        cfg.ClickUpTag,
 			DryRun:            cfg.DryRun,
 			FetchArticle:      cfg.AnalyzeFetch,
+			SkipTitle:         skipTitle,
 		}, log)
 		p.SetAnalyzer(an)
 		log.Info("news analysis enabled",
