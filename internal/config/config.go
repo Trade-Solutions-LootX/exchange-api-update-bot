@@ -70,6 +70,24 @@ type Config struct {
 	LoadMemPercent float64
 	LoadInterval   time.Duration
 
+	// LLM news analysis: every new announcement is judged by a model; API
+	// changes that require terminal work become urgent ClickUp tasks. Enabled
+	// when LLMAPIKey is set. Provider: anthropic | openai | deepseek.
+	LLMProvider string
+	LLMAPIKey   string
+	LLMModel    string
+	LLMBaseURL  string
+	LLMTimeout  time.Duration
+	// AnalyzeScope: "all" (every new item) or "api" (only classifier-tagged API items).
+	AnalyzeScope string
+	// AnalyzeMinTask: file a ClickUp task only at/above this model importance.
+	AnalyzeMinTask string
+	AnalyzeFetch   bool
+	// ClickUp target for tasks (empty token = analysis only, no tasks).
+	ClickUpToken  string
+	ClickUpListID string
+	ClickUpTag    string
+
 	// DryRun logs would-be Telegram messages instead of sending them.
 	DryRun bool
 
@@ -122,6 +140,17 @@ func Load() (*Config, error) {
 		LoadCPUPercent:     float64(getInt("LOAD_CPU_PERCENT", 85)),
 		LoadMemPercent:     float64(getInt("LOAD_MEM_PERCENT", 90)),
 		LoadInterval:       getDuration("LOAD_INTERVAL", 5*time.Minute),
+		LLMProvider:        strings.ToLower(getString("LLM_PROVIDER", "anthropic")),
+		LLMAPIKey:          getString("LLM_API_KEY", ""),
+		LLMModel:           getString("LLM_MODEL", ""),
+		LLMBaseURL:         getString("LLM_BASE_URL", ""),
+		LLMTimeout:         getDuration("LLM_TIMEOUT", 120*time.Second),
+		AnalyzeScope:       strings.ToLower(getString("ANALYZE_SCOPE", "all")),
+		AnalyzeMinTask:     strings.ToLower(getString("ANALYZE_MIN_TASK", "high")),
+		AnalyzeFetch:       getBool("ANALYZE_FETCH_ARTICLE", true),
+		ClickUpToken:       getString("CLICKUP_TOKEN", ""),
+		ClickUpListID:      getString("CLICKUP_LIST_ID", "901818340919"),
+		ClickUpTag:         getString("CLICKUP_TAG", "exchange-api"),
 	}
 
 	c.EnabledExchanges = parseSet(getString("ENABLED_EXCHANGES", ""))
@@ -141,6 +170,12 @@ func Load() (*Config, error) {
 	}
 	if c.PollInterval < 10*time.Second {
 		return nil, fmt.Errorf("POLL_INTERVAL too small (%s); minimum 10s to stay polite", c.PollInterval)
+	}
+	if c.AnalyzeScope != "all" && c.AnalyzeScope != "api" {
+		return nil, fmt.Errorf("ANALYZE_SCOPE must be all|api, got %q", c.AnalyzeScope)
+	}
+	if c.LLMTimeout < 10*time.Second {
+		return nil, fmt.Errorf("LLM_TIMEOUT too small (%s); minimum 10s", c.LLMTimeout)
 	}
 	if c.HTTPTimeout < time.Second {
 		// A zero/negative http.Client.Timeout means "no timeout", which would

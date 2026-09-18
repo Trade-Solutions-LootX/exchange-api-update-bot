@@ -116,6 +116,10 @@ All via environment (see [`.env.example`](.env.example)). Defaults in **bold**.
 | `LOAD_MONITORING` | **false** | poll DO metrics for CPU/RAM threshold alerts |
 | `SEND_HISTORY_ON_START` | **true** | backfill newest item per feed on first run |
 | `HISTORY_COUNT` | **1** | how many to backfill per feed |
+| `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_MODEL` | anthropic / — / provider default | enable LLM news analysis (see below) |
+| `ANALYZE_SCOPE` | **all** | `all` new items or only `api`-tagged ones |
+| `ANALYZE_MIN_TASK` | **high** | model importance needed to file a ClickUp task |
+| `CLICKUP_TOKEN` / `CLICKUP_LIST_ID` / `CLICKUP_TAG` | — / Product & Engineering / exchange-api | where tasks go |
 | `DRY_RUN` | **false** | log instead of send |
 | `STATE_PATH` | **/data/state.json** | persisted "already sent" set |
 | `HEALTH_ADDR` | **:8080** | `/healthz` + `/stats` (empty disables) |
@@ -139,6 +143,24 @@ Only want *breaking* API changes? `API_ONLY=true` + `MIN_IMPORTANCE=critical`.
 - Note: Vultr's **status page** is behind a Cloudflare challenge that blocks Go's TLS
   fingerprint from many datacenter IPs, so it's best-effort (fails gracefully). Vultr
   **billing** uses a different host and works fine with a key.
+
+### LLM news analysis → ClickUp
+
+Set `LLM_API_KEY` (and optionally `LLM_PROVIDER=anthropic|openai|deepseek`,
+`LLM_MODEL`) and every new announcement — all of them, not only what Telegram
+shows — is judged by a model from the terminal's point of view: *is this an
+exchange-API change LootX must react to?* When it is (`api_related` +
+`needs_terminal_change` + importance ≥ `ANALYZE_MIN_TASK`, default `high`) the
+bot files a ClickUp task in `CLICKUP_LIST_ID` (tag `exchange-api`, priority
+**Urgent** for critical, High otherwise) with two sections — *Что изменилось*
+and *Что сделать в терминале* — plus the effective date and the source link, and
+posts a 🧠 note with the task link to Telegram. Dedup: each announcement is
+analyzed once (persisted in the state file) and an open task with the same name
+is never duplicated. `DRY_RUN=true` prints the verdicts and would-be tasks
+instead. The announcement page is downloaded for the model
+(`ANALYZE_FETCH_ARTICLE`), falling back to the feed preview when the page is
+JS-rendered. The providers are called over plain HTTPS — the project stays
+stdlib-only.
 
 ---
 
@@ -207,6 +229,7 @@ internal/
   telegram         send + interactive Bot API (getUpdates, keyboards)
   bot              command handler (/status /check /mute …) + button callbacks
   poller           orchestration: schedule · dedup · feed-health · paced delivery
+  analyze          LLM verdict per announcement (anthropic/openai/deepseek over HTTPS) → ClickUp task
   health           /healthz + /stats for container liveness
 ```
 

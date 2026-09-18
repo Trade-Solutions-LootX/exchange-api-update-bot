@@ -28,14 +28,21 @@ import (
 	"exchangebot/internal/telegram"
 )
 
+// Analyzer receives every genuinely new announcement (before delivery
+// filters) for asynchronous LLM analysis. Nil disables it.
+type Analyzer interface {
+	Submit(model.Announcement)
+}
+
 // Poller wires sources, the seen-store, and the Telegram sender together.
 type Poller struct {
-	cfg     *config.Config
-	sources []sources.Source
-	store   *store.Store
-	sender  *telegram.Sender
-	control *control.Controller
-	log     *slog.Logger
+	cfg      *config.Config
+	sources  []sources.Source
+	store    *store.Store
+	sender   *telegram.Sender
+	control  *control.Controller
+	analyzer Analyzer
+	log      *slog.Logger
 
 	// pacing between Telegram sends to respect per-chat rate limits.
 	sendGap time.Duration
@@ -84,6 +91,9 @@ func New(cfg *config.Config, srcs []sources.Source, st *store.Store, sender *tel
 		downNotified: map[string]bool{},
 	}
 }
+
+// SetAnalyzer attaches the LLM news analyzer. Call before Run.
+func (p *Poller) SetAnalyzer(a Analyzer) { p.analyzer = a }
 
 // Run starts all goroutines and blocks until ctx is cancelled, then drains and
 // flushes state before returning.
@@ -216,6 +226,9 @@ func (p *Poller) handleFirstRun(s sources.Source, items []model.Announcement) {
 			if p.store.IsSeen(key) {
 				continue
 			}
+			if p.analyzer != nil {
+				p.analyzer.Submit(a)
+			}
 			p.enqueue(a, true)
 		} else {
 			p.store.MarkSeen(key, now) // silently suppress the rest of the backlog
@@ -237,6 +250,12 @@ func (p *Poller) handleUpdates(items []model.Announcement) {
 		key := a.DedupKey()
 		if p.store.IsSeen(key) {
 			continue
+		}
+		// Analysis is independent of delivery: mutes, subscriptions and the
+		// importance threshold decide what a human sees in Telegram, the model
+		// sees every new item once (it dedups on its own).
+		if p.analyzer != nil {
+			p.analyzer.Submit(a)
 		}
 		if p.control.IsMuted(a.Exchange) {
 			// Muted: drop (mark seen) so the backlog doesn't flood after unmute.

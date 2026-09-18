@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"exchangebot/internal/analyze"
 	"exchangebot/internal/bot"
 	"exchangebot/internal/config"
 	"exchangebot/internal/control"
@@ -163,6 +164,43 @@ func run() error {
 	ctrl := control.New(cfg.MinImportance)
 	p := poller.New(cfg, srcs, st, sender, ctrl, log)
 
+	// LLM news analysis → urgent ClickUp tasks. Optional: needs LLM_API_KEY.
+	var an *analyze.Analyzer
+	if cfg.LLMAPIKey != "" {
+		llmHTTP := httpx.New(cfg.LLMTimeout, cfg.UserAgent, log, httpx.WithMaxRetries(1))
+		llm, err := analyze.NewLLM(analyze.Provider(cfg.LLMProvider), cfg.LLMAPIKey, cfg.LLMModel, cfg.LLMBaseURL, llmHTTP)
+		if err != nil {
+			return err
+		}
+		an = analyze.New(llm, hc, st, sender, analyze.Options{
+			Scope:             cfg.AnalyzeScope,
+			MinTaskImportance: cfg.AnalyzeMinTask,
+			ClickUpToken:      cfg.ClickUpToken,
+			ClickUpListID:     cfg.ClickUpListID,
+			ClickUpTag:        cfg.ClickUpTag,
+			DryRun:            cfg.DryRun,
+			FetchArticle:      cfg.AnalyzeFetch,
+		}, log)
+		p.SetAnalyzer(an)
+		log.Info("news analysis enabled",
+			"provider", llm.Provider(), "model", llm.Model(),
+			"scope", cfg.AnalyzeScope, "min_task", cfg.AnalyzeMinTask,
+			"clickup", cfg.ClickUpToken != "" && !cfg.DryRun,
+		)
+		if cfg.ClickUpToken != "" && !cfg.DryRun {
+			probeCtx, cancelProbe := context.WithTimeout(context.Background(), 15*time.Second)
+			cu := analyze.NewClickUp(cfg.ClickUpToken, cfg.ClickUpListID, cfg.ClickUpTag, hc)
+			if name, err := cu.Probe(probeCtx); err != nil {
+				log.Warn("clickup probe failed — tasks will fail until fixed", "err", err)
+			} else {
+				log.Info("clickup connected", "list", name, "tag", cfg.ClickUpTag)
+			}
+			cancelProbe()
+		}
+	} else {
+		log.Info("news analysis disabled (set LLM_API_KEY to enable)")
+	}
+
 	hs := health.New(cfg.HealthAddr, p, log)
 	hs.Start()
 
@@ -186,6 +224,9 @@ func run() error {
 		go b.Run(ctx)
 	}
 
+	if an != nil {
+		go an.Run(ctx)
+	}
 	p.Run(ctx)
 
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
