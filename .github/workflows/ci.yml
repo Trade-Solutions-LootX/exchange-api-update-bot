@@ -32,7 +32,6 @@ jobs:
           cache-dependency-path: go.mod
 
       - name: gofmt
-        continue-on-error: true
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
