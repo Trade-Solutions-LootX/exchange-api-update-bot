@@ -1,0 +1,48 @@
+# CI: gofmt → go vet → go test → сборка бинаря.
+# Репозиторий публичный: workflow не получает и не печатает никаких секретов,
+# тесты ходят только в httptest-серверы (сторонних зависимостей нет, go.sum нет).
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md", "docs/**"]
+  pull_request:
+    paths-ignore: ["**/*.md", "docs/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # go.sum нет (ноль зависимостей) — ключ кэша сборки считаем по go.mod.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt не применён к файлам:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - run: go vet ./...
+
+      - run: go test ./...
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -trimpath -o bin/bot ./cmd/bot
